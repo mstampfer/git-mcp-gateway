@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gimp": {
+      "command": "python",
+      "args": ["gimp_mcp_server.py"],
+      "env": {
+        "GIMP_PLUGIN_PATH": "${HOME}/.config/GIMP/3.0/plug-ins",
+        "PYTHONPATH": "${GIMP_PLUGIN_PATH}:${PYTHONPATH}"
+      }
+    }
+  }
+}
