@@ -233,7 +233,7 @@ class GimpMCPExtensions:
         )
     
     async def create_animated_gif(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Create animated GIF from multiple images or layers"""
+        """Create animated GIF from multiple images or layers using GIMP 3.0"""
         image_paths = args.get("image_paths", [])
         frame_delay = args.get("frame_delay", 100)  # milliseconds
         loop_count = args.get("loop_count", 0)  # 0 = infinite
@@ -242,59 +242,102 @@ class GimpMCPExtensions:
         if not image_paths:
             return [TextContent(type="text", text="No images provided for animation")]
         
-        # Create new image for animation
-        first_image = PILImage.open(image_paths[0])
-        width, height = first_image.size
-        
-        await self.server.call_tool("create_image", {
-            "width": width,
-            "height": height,
-            "name": "Animation"
-        })
-        
-        # Add each image as a layer
-        for i, image_path in enumerate(image_paths):
-            await self.server.call_tool("create_layer", {"name": f"Frame_{i+1}"})
-            await self.server.call_tool("import_image_as_layer", {"filepath": image_path})
-        
-        # Set animation properties
-        await self.server.call_tool("set_animation_properties", {
-            "frame_delay": frame_delay,
-            "loop_count": loop_count
-        })
-        
-        # Export as GIF
-        await self.server.call_tool("export_animation", {
-            "filepath": output_path,
-            "format": "gif"
-        })
-        
-        return [TextContent(type="text", text=f"Created animated GIF: {output_path}")]
+        try:
+            # Load first image to get dimensions
+            first_file = Gio.File.new_for_path(image_paths[0])
+            image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, first_file)
+            
+            # Add each subsequent image as a layer
+            for i, image_path in enumerate(image_paths[1:], 1):
+                file_obj = Gio.File.new_for_path(image_path)
+                temp_image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file_obj)
+                
+                # Copy layer from temp image to main image
+                temp_layers = temp_image.list_layers()
+                if temp_layers:
+                    layer_copy = temp_layers[0].copy()
+                    layer_copy.set_name(f"Frame {i+1}")
+                    image.insert_layer(layer_copy, None, 0)
+                
+                # Clean up temp image
+                temp_image.delete()
+            
+            # Set up for GIF export
+            # Convert to indexed mode for GIF
+            pdb = Gimp.get_pdb()
+            result = pdb.run_procedure("gimp-image-convert-indexed",
+                                     [image,
+                                      Gimp.ConvertDitherType.NONE,
+                                      Gimp.ConvertPaletteType.GENERATE,
+                                      256,  # max colors
+                                      False,  # alpha dither
+                                      False,  # remove unused
+                                      ""])  # palette
+            
+            # Export as GIF
+            all_layers = image.list_layers()
+            export_file = Gio.File.new_for_path(output_path)
+            Gimp.file_export(Gimp.RunMode.NONINTERACTIVE, image, all_layers, export_file)
+            
+            return [TextContent(type="text", text=f"Created animated GIF: {output_path}")]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error creating GIF: {str(e)}")]
     
     async def apply_style_transfer(self, args: Dict[str, Any]) -> List[TextContent]:
-        """Apply neural style transfer (if available)"""
+        """Apply style transfer using GIMP 3.0 filters"""
         content_image = args["content_image"]
         style_image = args["style_image"]
         output_path = args["output_path"]
         style_strength = args.get("style_strength", 0.7)
         
-        # Open content image
-        await self.server.call_tool("open_image", {"filepath": content_image})
-        
-        # Apply style transfer (this would require a neural network plugin)
-        result = await self.server.call_tool("apply_filter", {
-            "filter_name": "neural-style-transfer",
-            "parameters": {
-                "style_image": style_image,
-                "strength": style_strength,
-                "iterations": 100
-            }
-        })
-        
-        # Save result
-        await self.server.call_tool("save_image", {"filepath": output_path})
-        
-        return [TextContent(type="text", text=f"Applied style transfer: {output_path}")]
+        try:
+            # Open content image
+            content_file = Gio.File.new_for_path(content_image)
+            image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, content_file)
+            
+            # Open style image and resize to match content
+            style_file = Gio.File.new_for_path(style_image)
+            style_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, style_file)
+            
+            # Scale style image to match content dimensions
+            style_img.scale(image.get_width(), image.get_height())
+            
+            # Copy style image as a layer
+            style_layers = style_img.list_layers()
+            if style_layers:
+                style_layer = style_layers[0].copy()
+                style_layer.set_name("Style Layer")
+                image.insert_layer(style_layer, None, 0)
+                
+                # Apply blend mode for style transfer effect
+                style_layer.set_mode(Gimp.LayerMode.SOFTLIGHT_MODE)
+                style_layer.set_opacity(style_strength * 100)
+                
+                # Apply additional artistic filters
+                pdb = Gimp.get_pdb()
+                
+                # Apply oil painting effect
+                result = pdb.run_procedure("plug-in-oilify",
+                                         [Gimp.RunMode.NONINTERACTIVE,
+                                          image,
+                                          1,
+                                          [style_layer],
+                                          8,  # mask size
+                                          1])  # exponent
+            
+            # Clean up style image
+            style_img.delete()
+            
+            # Export result
+            all_layers = image.list_layers()
+            output_file = Gio.File.new_for_path(output_path)
+            Gimp.file_export(Gimp.RunMode.NONINTERACTIVE, image, all_layers, output_file)
+            
+            return [TextContent(type="text", text=f"Applied style transfer: {output_path}")]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error in style transfer: {str(e)}")]
     
     async def generate_pattern(self, args: Dict[str, Any]) -> List[TextContent]:
         """Generate seamless patterns"""

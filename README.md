@@ -1,8 +1,107 @@
-# GIMP MCP Server - Complete Documentation
+### Creating Images (GIMP 3.0 Style)
+```python
+# Create new image
+image = Gimp.Image.new(width, height, Gimp.ImageBaseType.RGB)
+
+# Create layer
+layer = Gimp.Layer.new(image, "Background", width, height, 
+                      Gimp.ImageType.RGB_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+
+# Insert layer into image
+image.insert_layer(layer, None, 0)
+
+# Fill layer with color (GIMP 3.0 uses Gegl.Color)
+white_color = Gegl.Color.new("white")
+Gimp.Context.set_foreground(white_color)
+Gimp.drawable_edit_fill(layer, Gimp.FillType.FOREGROUND)
+```
+
+### Color Handling (GIMP 3.0 Style)
+```python
+# Import Gegl for color operations
+gi.require_version('Gegl', '0.4')
+from gi.repository import Gegl
+
+# Create colors different ways
+red_color = Gegl.Color.new("red")
+blue_hex = Gegl.Color.new("#0000FF")
+green_rgba = Gegl.Color()
+green_rgba.set_rgba(0.0, 1.0, 0.0, 1.0)
+
+# Set context colors
+Gimp.Context.set_foreground(red_color)
+Gimp.Context.set_background(blue_hex)
+
+# Get current colors
+current_fg = Gimp.Context.get_foreground()
+rgba_values = current_fg.get_rgba()  # Returns (r, g, b, a) tuple
+```
+
+### File Operations (GIMP 3.0 Style)
+```python
+# Load image
+file_obj = Gio.File.new_for_path(filepath)
+image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file_obj)
+
+# Export image
+output_file = Gio.File.new_for_path(output_path)
+layers = image.list_layers()
+Gimp.file_export(Gimp.RunMode.NONINTERACTIVE, image, layers, output_file)
+```
+
+### Using PDB Procedures (GIMP 3.0 Style)
+```python
+pdb = Gimp.get_pdb()
+
+# Apply Gaussian blur
+result = pdb.run_procedure("plug-in-gauss",
+                          [Gimp.RunMode.NONINTERACTIVE,
+                           image,
+                           1,  # number of drawables
+                           [layer],  # drawable array
+                           radius_h,  # horizontal radius
+                           radius_v,  # vertical radius
+                           1])  # link radii
+
+# Check result
+if result.index(0) == Gimp.PDBStatusType.SUCCESS:
+    print("Filter applied successfully")
+```# GIMP 3.0 MCP Server - Complete Documentation
 
 ## Overview
 
-The GIMP MCP (Model Context Protocol) Server enables seamless integration between GIMP 3.0 and Claude Code, allowing AI-powered image editing workflows through natural language commands.
+The GIMP 3.0 MCP (Model Context Protocol) Server enables seamless integration between GIMP 3.0 and Claude Code, allowing AI-powered image editing workflows through natural language commands. This implementation is specifically designed for GIMP 3.0's new GObject Introspection-based Python API.
+
+## Key GIMP 3.0 Compatibility Features
+
+### New API Structure
+- **GObject Introspection**: Uses `gi.repository` for all GIMP interactions
+- **Procedure Database**: Access via `Gimp.get_pdb().run_procedure()`
+- **File Operations**: Uses `Gio.File` objects for file handling
+- **Layer Management**: New layer insertion and management methods
+- **Display System**: Updated display creation and management
+
+### GIMP 3.0 Specific Changes
+- `Gimp.file_load()` and `Gimp.file_export()` with `Gio.File` objects
+- `image.insert_layer()` instead of `pdb.gimp_image_add_layer()`
+- `layer.set_offsets()` for positioning layers
+- `Gimp.drawable_edit_fill()` for layer filling
+- Modern blend mode constants (`Gimp.LayerMode.*`)
+- **Color Handling**: Uses `Gegl.Color` instead of `Gimp.RGB`
+
+### Color System Updates
+GIMP 3.0 uses the Gegl color system:
+```python
+# OLD (GIMP 2.x): Gimp.RGB.new_with_values(1.0, 0.0, 0.0)
+# NEW (GIMP 3.0): 
+red_color = Gegl.Color.new("red")
+# or
+red_color = Gegl.Color()
+red_color.set_rgba(1.0, 0.0, 0.0, 1.0)
+
+# Set context colors
+Gimp.Context.set_foreground(red_color)
+```
 
 ## Architecture
 
@@ -10,9 +109,9 @@ The GIMP MCP (Model Context Protocol) Server enables seamless integration betwee
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Claude Code   │◄──►│   MCP Server    │◄──►│   GIMP 3.0      │
 │                 │    │                 │    │                 │
-│ - Natural Lang  │    │ - Protocol      │    │ - Image Editing │
-│ - Workflows     │    │ - Tool Registry │    │ - Filters       │
-│ - Automation    │    │ - Extensions    │    │ - Painting      │
+│ - Natural Lang  │    │ - Protocol      │    │ - New Python API│
+│ - Workflows     │    │ - Tool Registry │    │ - GI Bindings   │
+│ - Automation    │    │ - GIMP 3.0 API  │    │ - Modern PDB    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
@@ -39,13 +138,37 @@ The GIMP MCP (Model Context Protocol) Server enables seamless integration betwee
 ## Installation
 
 ### Prerequisites
-- GIMP 3.0 installed
-- Python 3.8+ with pip
-- Claude Code CLI tool
+- **GIMP 3.0** with Python support
+- **Python 3.8+** with pip
+- **GObject Introspection** libraries
+- **Claude Code** CLI tool
 
-### Step 1: Install Dependencies
+### Step 1: Install GIMP 3.0 and Dependencies
 ```bash
-pip install mcp gi-python pygobject pillow numpy
+# Ubuntu/Debian
+sudo apt update
+sudo apt install gimp-3.0 python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-gegl-0.4
+
+# Fedora/RHEL
+sudo dnf install gimp python3-gobject python3-cairo-devel
+
+# macOS (using Homebrew)
+brew install gimp python3 pygobject3 gtk+3
+
+# Install Python MCP dependencies
+pip3 install --user mcp pygobject pillow numpy
+```
+
+### Step 2: Verify GIMP 3.0 Python Bindings
+```bash
+python3 -c "
+import gi
+gi.require_version('Gimp', '3.0')
+gi.require_version('Gegl', '0.4')
+from gi.repository import Gimp, Gegl
+print('✓ GIMP 3.0 Python bindings available!')
+print('✓ Gegl color system available!')
+"
 ```
 
 ### Step 2: Run Setup Script
@@ -122,9 +245,55 @@ claude-code "Apply oil painting effect with medium strength to create artistic v
 claude-code "Create Instagram square and story variants of the current image"
 ```
 
-## API Reference
+## GIMP 3.0 API Examples
 
-### Core Tools
+### Creating Images (GIMP 3.0 Style)
+```python
+# Create new image
+image = Gimp.Image.new(width, height, Gimp.ImageBaseType.RGB)
+
+# Create layer
+layer = Gimp.Layer.new(image, "Background", width, height, 
+                      Gimp.ImageType.RGB_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+
+# Insert layer into image
+image.insert_layer(layer, None, 0)
+
+# Fill layer
+Gimp.Context.set_foreground(Gimp.RGB.new_with_values(1.0, 1.0, 1.0))
+Gimp.drawable_edit_fill(layer, Gimp.FillType.FOREGROUND)
+```
+
+### File Operations (GIMP 3.0 Style)
+```python
+# Load image
+file_obj = Gio.File.new_for_path(filepath)
+image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file_obj)
+
+# Export image
+output_file = Gio.File.new_for_path(output_path)
+layers = image.list_layers()
+Gimp.file_export(Gimp.RunMode.NONINTERACTIVE, image, layers, output_file)
+```
+
+### Using PDB Procedures (GIMP 3.0 Style)
+```python
+pdb = Gimp.get_pdb()
+
+# Apply Gaussian blur
+result = pdb.run_procedure("plug-in-gauss",
+                          [Gimp.RunMode.NONINTERACTIVE,
+                           image,
+                           1,  # number of drawables
+                           [layer],  # drawable array
+                           radius_h,  # horizontal radius
+                           radius_v,  # vertical radius
+                           1])  # link radii
+
+# Check result
+if result.index(0) == Gimp.PDBStatusType.SUCCESS:
+    print("Filter applied successfully")
+```
 
 #### `create_image`
 Create a new GIMP image.
@@ -298,36 +467,92 @@ The system supports natural language commands that are automatically converted t
 
 ## Troubleshooting
 
+## Troubleshooting GIMP 3.0 Integration
+
 ### Common Issues
 
 #### GIMP 3.0 Not Found
 ```bash
-# Check GIMP installation
+# Check GIMP 3.0 installation
 which gimp-3.0
+gimp-3.0 --version
+
 # Install if missing (Ubuntu/Debian)
 sudo apt install gimp-3.0
+
+# Check for development version
+which gimp-2.99
 ```
 
-#### Python Dependencies Missing
+#### Gegl Color System Missing
 ```bash
-# Install missing packages
-pip install --user mcp gi-python pygobject
+# Install Gegl development packages
+sudo apt install libgegl-dev gir1.2-gegl-0.4
+
+# Test Gegl bindings
+python3 -c "
+import gi
+gi.require_version('Gegl', '0.4')
+from gi.repository import Gegl
+print('Gegl bindings available')
+color = Gegl.Color.new('red')
+print('Gegl color system working')
+"
 ```
 
-#### MCP Server Not Starting
+#### Color Operation Errors
+```python
+# WRONG (GIMP 2.x style)
+color = Gimp.RGB.new_with_values(1.0, 0.0, 0.0)  # Will fail
+
+# CORRECT (GIMP 3.0 style)
+color = Gegl.Color.new("red")
+# or
+color = Gegl.Color()
+color.set_rgba(1.0, 0.0, 0.0, 1.0)
+
+# Set context
+Gimp.Context.set_foreground(color)
+```
+
+#### GIMP 3.0 Plugin Not Loading
 ```bash
-# Check Python path
-python3 -c "import gi; print('GI available')"
-# Check GIMP Python bindings
-python3 -c "import gi; gi.require_version('Gimp', '3.0'); print('GIMP bindings OK')"
+# Check plugin directory
+ls ~/.config/GIMP/3.0/plug-ins/gimp-mcp-server/
+
+# Check plugin permissions
+chmod +x ~/.config/GIMP/3.0/plug-ins/gimp-mcp-server/*.py
+
+# Test plugin manually
+cd ~/.config/GIMP/3.0/plug-ins/gimp-mcp-server/
+python3 gimp-mcp-server.py
 ```
 
-#### Claude Code Connection Issues
+#### MCP Server Connection Issues
 ```bash
 # Verify MCP configuration
 cat ~/.config/claude-code/mcp_servers.json
-# Test server manually
+
+# Test server manually with correct GIMP 3.0 paths
 python3 ~/.config/GIMP/3.0/plug-ins/gimp-mcp-server/gimp_mcp_server.py
+
+# Check GIMP 3.0 is running
+ps aux | grep gimp-3.0
+```
+
+#### Procedure Database Errors
+```python
+# Debug PDB calls in GIMP 3.0
+pdb = Gimp.get_pdb()
+procedures = pdb.query("")  # List all procedures
+print("Available procedures:", len(procedures))
+
+# Check specific procedure
+proc_info = pdb.lookup_procedure("plug-in-gauss")
+if proc_info:
+    print("Procedure found:", proc_info.get_name())
+else:
+    print("Procedure not found")
 ```
 
 ### Debug Mode

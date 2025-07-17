@@ -29,40 +29,30 @@ mkdir -p "${MCP_CONFIG_DIR}"
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip3 install --user mcp gi-python pygobject
+pip3 install --user mcp pygobject
+
+# Verify GIMP 3.0 Python bindings including Gegl
+echo "Verifying GIMP 3.0 Python bindings..."
+python3 -c "
+import gi
+gi.require_version('Gimp', '3.0')
+gi.require_version('GimpUi', '3.0')
+gi.require_version('Gegl', '0.4')
+from gi.repository import Gimp, GimpUi, Gegl
+print('✓ GIMP 3.0 bindings verified')
+print('✓ Gegl color support available')
+" || {
+    echo "Error: GIMP 3.0 Python bindings not properly installed"
+    echo "Please install: sudo apt install gimp-3.0 python3-gi python3-gi-cairo gir1.2-gegl-0.4"
+    exit 1
+}
 
 # Copy server files
 echo "Installing GIMP MCP server..."
 cp gimp_mcp_server.py "${PLUGIN_DIR}/"
 chmod +x "${PLUGIN_DIR}/gimp_mcp_server.py"
 
-# Create GIMP plugin manifest
-cat > "${PLUGIN_DIR}/gimp-mcp-server.py" << 'EOF'
-#!/usr/bin/env python3
-
-import gi
-gi.require_version('Gimp', '3.0')
-from gi.repository import Gimp, GimpUi
-from gimp_mcp_server import GimpMCPServer
-import sys
-
-def run(procedure, run_mode, image, n_drawables, drawables, args, data):
-    """GIMP plugin entry point"""
-    if procedure.get_name() == 'python-fu-mcp-server':
-        server = GimpMCPServer()
-        server.current_image = image
-        # Start MCP server in background
-        import threading
-        import asyncio
-        
-        def run_server():
-            asyncio.run(server.run_mcp_server())
-        
-        thread = threading.Thread(target=run_server)
-        thread.daemon = True
-        thread.start()
-        
-        return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
     
     return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
 
